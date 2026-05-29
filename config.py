@@ -1,0 +1,39 @@
+"""Simulation configuration constants."""
+
+from __future__ import annotations
+
+GRID_SIZE = 80
+DEFAULT_TURNS = 500
+MAX_TURNS = 5000
+TURN_LABEL = "sim hour"
+
+# Visual
+CELL_PX = 8
+HUD_WIDTH = 320
+GRAPH_HEIGHT = 180
+FPS = 30
+HISTORY_LEN = 120
+
+# Agent economy
+START_ENERGY = 100.0
+START_CREDITS = 50
+MAX_ENERGY = 150.0
+ENERGY_PER_MOVE = 2.0
+ENERGY_PER_ACTION = 3.0
+ENERGY_REST_GAIN = 12.0
+GATHER_YIELD = (4, 10)
+TRADE_FEE = 0.05
+
+# Relationships
+REL_GAIN_COMMUNICATE = 0.15
+REL_GAIN_TRADE = 0.25
+REL_GAIN_ALLIANCE = 0.5
+REL_DECAY_CONFLICT = -0.35
+REL_DECAY_PER_TURN = 0.002
+
+# Governance
+VOTE_QUORUM = 0.6
+PASS_THRESHOLD = 0.55
+MAX_ACTIVE_PROPOSALS = 5
+
+DB_PATH = "emergence_world.db"
