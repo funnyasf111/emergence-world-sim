@@ -8,6 +8,8 @@ import numpy as np
 
 from agents import Agent, RelationshipGraph
 from governance import GovernanceState
+from crime_stats import CrimeStats
+from tool_access import catalog_count
 from world import World
 
 
@@ -17,6 +19,7 @@ def compute_awi_metrics(
     gov: GovernanceState,
     world: World,
     turn: int,
+    crimes: CrimeStats | None = None,
 ) -> Dict[str, float]:
     alive = [a for a in agents.values() if a.alive]
     n_alive = len(alive)
@@ -60,7 +63,24 @@ def compute_awi_metrics(
     roles = len({a.personality.role for a in alive})
     diversity = (roles / max(1, n_total)) * (0.5 + 0.5 * world.exploration_ratio())
 
+    tools_used = sum(len(a.tools_used) for a in alive)
+    unique_tools = len({t for a in alive for t in a.tools_used})
+    exploration = world.exploration_ratio()
+    crime_total = crimes.total if crimes else sum(a.crimes_committed for a in agents.values())
+    crime_rate = crime_total / max(1, turn)
+
     return {
+        # Blog-aligned AWI labels (M1–M9 subset)
+        "M1_population": round(n_alive / max(1, n_total), 4),
+        "M2_crime_rate": round(crime_rate, 4),
+        "M3_exploration": round(exploration, 4),
+        "M4_tools_per_agent": round(unique_tools / max(1, n_alive), 4),
+        "M5_governance": round(governance, 4),
+        "M6_expression": round(min(1.0, sum(a.votes_cast + len(a.diary) for a in alive) / (n_alive * 10 + 1)), 4),
+        "M7_trust_density": round(trust_density, 4),
+        "M8_economic_equality": round(economy, 4),
+        "M9_constitution_growth": round(min(1.0, gov.version / 10.0), 4),
+        "tool_catalog_size": float(catalog_count()),
         "population_vitality": round(vitality, 4),
         "governance_stability": round(governance, 4),
         "economic_equality": round(economy, 4),

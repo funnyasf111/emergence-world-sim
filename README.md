@@ -36,11 +36,19 @@ python main.py
 python main.py --headless --turns 500
 ```
 
+**Season 1 scale (15 sim-days ≈ blog experiment horizon):**
+
+```bash
+python main.py --headless --days 15 --seed 42 --reset
+```
+
 **Options:**
 
 ```bash
 python main.py --turns 1000 --seed 7 --reset
 ```
+
+See [PLATFORM.md](PLATFORM.md) for alignment with the Emergence AI research platform.
 
 ### In-sim controls (Pygame)
 

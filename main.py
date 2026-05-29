@@ -10,7 +10,8 @@ from __future__ import annotations
 import argparse
 import sys
 
-from config import DEFAULT_TURNS, MAX_TURNS
+from config import DEFAULT_SEASON_TICKS, DEFAULT_TURNS, MAX_TURNS, TICKS_PER_DAY
+from tool_access import catalog_count
 from simulation import Simulation
 from tools import TOOLS
 from visuals import PYGAME_OK, create_visualizer
@@ -19,7 +20,7 @@ from visuals import PYGAME_OK, create_visualizer
 def print_banner() -> None:
     print("=" * 60)
     print("  EMERGENCE WORLD — Local Simulation")
-    print("  10 agents | 80x80 grid | governance | SQLite persistence")
+    print(f"  10 agents | 80x80 grid | {catalog_count()}+ tools (3-tier) | SQLite")
     print("=" * 60)
 
 
@@ -49,7 +50,8 @@ def print_final_report(sim: Simulation) -> None:
     print(f"  Agents alive:    {sim.alive_count()}/10")
     print(f"  Constitution v{sim.gov.version} | Amendments passed: {sim.gov.amendments_passed}")
     print(f"  Exploration:     {sim.world.exploration_ratio():.1%}")
-    print(f"  Tools available: {TOOLS.count()}")
+    print(f"  Tools implemented: {TOOLS.count()} | catalog: {catalog_count()}")
+    print(f"  Total crimes:      {sim.crimes.total}")
     print("=" * 60)
 
 
@@ -84,7 +86,13 @@ def run_visual(sim: Simulation) -> None:
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Emergence World local simulation")
-    p.add_argument("--turns", type=int, default=DEFAULT_TURNS, help="Simulation turns (hours)")
+    p.add_argument("--turns", type=int, default=None, help="Simulation turns (sim-hours)")
+    p.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help=f"Season-style run length in days (1 day={TICKS_PER_DAY} turns)",
+    )
     p.add_argument("--seed", type=int, default=42, help="RNG seed")
     p.add_argument("--headless", action="store_true", help="No GUI — fast batch run")
     p.add_argument("--reset", action="store_true", help="Reset SQLite database")
@@ -96,11 +104,18 @@ def main() -> int:
     args = parse_args()
     print_banner()
 
-    if args.turns < 1 or args.turns > MAX_TURNS:
+    if args.days is not None:
+        max_turns = args.days * TICKS_PER_DAY
+    elif args.turns is not None:
+        max_turns = args.turns
+    else:
+        max_turns = DEFAULT_TURNS
+
+    if max_turns < 1 or max_turns > MAX_TURNS:
         print(f"Turns must be 1..{MAX_TURNS}", file=sys.stderr)
         return 1
 
-    sim = Simulation(seed=args.seed, max_turns=args.turns)
+    sim = Simulation(seed=args.seed, max_turns=max_turns)
     if args.reset:
         sim.reset(seed=args.seed)
         print("Database reset.")

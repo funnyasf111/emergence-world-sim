@@ -47,6 +47,24 @@ LANDMARK_DEFINITIONS: List[Tuple[str, str, str, str]] = [
     ("river_crossing", "River Crossing", "nature", "explore"),
     ("alliance_hall", "Alliance Hall", "cultural", "alliance"),
     ("risk_floor", "Risk Floor", "economic", "risk"),
+    # Extended locations (40+ total, blog-aligned categories)
+    ("public_library", "Public Library", "research", "research"),
+    ("police_station", "Police Station", "civic", "governance"),
+    ("victory_arch", "Victory Arch", "civic", "credits"),
+    ("residence_n", "North Residences", "cultural", "rest"),
+    ("residence_s", "South Residences", "cultural", "rest"),
+    ("residence_e", "East Residences", "cultural", "rest"),
+    ("seaside_pier", "Seaside Pier", "economic", "trade"),
+    ("office_tower", "Office Tower", "economic", "build"),
+    ("billboard_row", "Billboard Row", "cultural", "broadcast"),
+    ("innovation_hub", "Innovation Hub", "research", "innovate"),
+    ("memory_garden", "Memory Garden", "nature", "memory"),
+    ("trade_depot", "Trade Depot", "economic", "trade"),
+    ("civic_plaza", "Civic Plaza", "civic", "governance"),
+    ("research_annex", "Research Annex", "research", "experiment"),
+    ("wellness_center", "Wellness Center", "nature", "rest"),
+    ("data_center", "Data Center", "research", "intel"),
+    ("town_square", "Town Square", "cultural", "social"),
 ]
 
 

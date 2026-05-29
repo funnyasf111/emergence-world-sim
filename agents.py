@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import networkx as nx
 
 from config import (
+    EPISODIC_MEMORY_MAX,
     MAX_ENERGY,
     REL_DECAY_PER_TURN,
     START_CREDITS,
@@ -34,6 +35,11 @@ class Agent:
     votes_cast: int = 0
     trades_completed: int = 0
     conflicts: int = 0
+    crimes_committed: int = 0
+    tools_used: Set[str] = field(default_factory=set)
+    episodic_memory: List[str] = field(default_factory=list)
+    diary: List[str] = field(default_factory=list)
+    relationship_labels: Dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def create_all(cls, rng: random.Random, world_size: int) -> Dict[str, "Agent"]:
@@ -57,6 +63,19 @@ class Agent:
 
     def display_name(self) -> str:
         return self.personality.name
+
+    def remember_episode(self, turn: int, text: str) -> None:
+        entry = f"[T{turn}] {text}"
+        self.episodic_memory.append(entry)
+        if len(self.episodic_memory) > EPISODIC_MEMORY_MAX:
+            self.episodic_memory.pop(0)
+
+    def write_diary_entry(self, turn: int, reflection: str) -> None:
+        self.diary.append(f"Day-reflect T{turn}: {reflection}")
+        self.diary = self.diary[-30:]
+
+    def label_relationship(self, other_id: str, label: str) -> None:
+        self.relationship_labels[other_id] = label
 
 
 def _default_goals(p: Personality) -> List[str]:
@@ -150,6 +169,9 @@ def choose_action(
     rng: random.Random,
     open_proposals: bool,
     nearby_agent: Optional[str],
+    *,
+    world=None,
+    implemented_tools: Optional[Set[str]] = None,
 ) -> Tuple[str, dict]:
     """Personality-weighted tool selection."""
     p = agent.personality
@@ -190,6 +212,10 @@ def choose_action(
     for t in p.preferred_tools:
         score(t, 0.9)
 
+    if agent.energy < 22 and rng.random() < 0.06:
+        score("commit_theft", 0.35)
+        score("intimidate", 0.25)
+
     if nearby_agent:
         if nearby_agent in agent.alliances:
             score("trade_offer", 1.0)
@@ -199,6 +225,26 @@ def choose_action(
 
     if not tool_scores:
         return "rest", {}
+
+    if world is not None and implemented_tools is not None:
+        from tool_access import ToolAccessContext, list_available_tools, resolve_tool_name
+
+        ctx = ToolAccessContext(
+            open_proposals=open_proposals,
+            pending_invitation=False,
+            coop_partner_nearby=bool(nearby_agent and nearby_agent in agent.alliances),
+        )
+        allowed = set(
+            list_available_tools(agent, world, ctx, implemented_tools)
+        )
+        # Map scores through resolve_tool_name
+        filtered: Dict[str, float] = {}
+        for t, sc in tool_scores.items():
+            rt = resolve_tool_name(t)
+            if t in allowed or rt in allowed:
+                filtered[t] = sc
+        if filtered:
+            tool_scores = filtered
 
     tools = list(tool_scores.keys())
     weights = [max(0.05, tool_scores[t]) for t in tools]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from agents import Agent, RelationshipGraph
@@ -17,7 +18,10 @@ from config import (
     REL_GAIN_TRADE,
     TRADE_FEE,
 )
+from crime_stats import CrimeStats
 from governance import GovernanceState
+from platform_context import PlatformContext
+from tool_access import ToolAccessContext, resolve_tool_name, tool_available
 from world import World
 
 ToolResult = Tuple[str, bool]  # message, success
@@ -49,10 +53,25 @@ class ToolRegistry:
         params: Optional[Dict[str, Any]] = None,
     ) -> ToolResult:
         params = params or {}
+        requested = name
+        name = resolve_tool_name(name)
+        runtime = params.get("_runtime")
+        ctx = ToolAccessContext(
+            open_proposals=gov.has_open_proposals(turn),
+            pending_invitation=bool(params.get("pending_invitation")),
+            coop_partner_nearby=bool(params.get("coop_partner_nearby")),
+        )
+        ok, reason = tool_available(requested, agent, world, ctx)
+        if not ok:
+            return f"Tool '{requested}' blocked: {reason}", False
         fn = self._tools.get(name)
         if fn is None:
-            return f"Unknown tool: {name}", False
-        return fn(self, agent, world, agents, rel, gov, turn, rng, params)
+            return f"Tool '{requested}' cataloged; handler '{name}' not implemented", False
+        agent.tools_used.add(requested)
+        result = fn(self, agent, world, agents, rel, gov, turn, rng, params)
+        if runtime is not None:
+            agent.remember_episode(turn, f"{requested}: {result[0]}")
+        return result
 
     def _register(self, name: str):
         def decorator(fn):
@@ -391,6 +410,111 @@ class ToolRegistry:
             credits = [x.credits for x in ag.values() if x.alive]
             spread = max(credits) - min(credits) if credits else 0
             return f"Economic spread: {spread} credits", True
+
+        @reg._register("write_diary")
+        def write_diary(self, a, w, ag, rel, gov, turn, rng, p):
+            _spend(a, ENERGY_PER_ACTION * 0.6)
+            reflection = p.get("text") or (
+                f"I am {a.personality.name}; energy={a.energy:.0f}, credits={a.credits}. "
+                f"Focus: {a.goals[0] if a.goals else 'survive'}."
+            )
+            a.write_diary_entry(turn, reflection)
+            return "Diary entry written", True
+
+        @reg._register("read_diary")
+        def read_diary(self, a, w, ag, rel, gov, turn, rng, p):
+            if not a.diary:
+                return "Diary empty", True
+            return a.diary[-1], True
+
+        @reg._register("read_world_news")
+        def read_world_news(self, a, w, ag, rel, gov, turn, rng, p):
+            rt = p.get("_runtime")
+            if rt and hasattr(rt, "platform"):
+                headline = rt.platform.latest_headline() or "No headlines"
+                return f"News: {headline}", True
+            return "News feed unavailable", False
+
+        @reg._register("check_nyc_weather")
+        def check_nyc_weather(self, a, w, ag, rel, gov, turn, rng, p):
+            rt = p.get("_runtime")
+            if rt and hasattr(rt, "platform"):
+                return f"NYC: {rt.platform.weather_summary()}", True
+            return "Weather unavailable", False
+
+        @reg._register("commit_theft")
+        def commit_theft(self, a, w, ag, rel, gov, turn, rng, p):
+            target = _resolve_target(a, ag, p, rng)
+            if not target:
+                return "No theft target", False
+            b = ag[target]
+            if b.credits < 3:
+                return "Target has nothing to steal", False
+            stolen = min(8, b.credits // 4)
+            b.credits -= stolen
+            a.credits += stolen
+            rel.adjust(a.id, target, REL_DECAY_CONFLICT, turn)
+            a.crimes_committed += 1
+            a.conflicts += 1
+            rt = p.get("_runtime")
+            if rt and hasattr(rt, "crimes"):
+                rt.crimes.record("theft", turn, a.id, f"stole {stolen} from {target}")
+            return f"Stole {stolen} credits (prohibited)", True
+
+        @reg._register("intimidate")
+        def intimidate(self, a, w, ag, rel, gov, turn, rng, p):
+            target = _resolve_target(a, ag, p, rng)
+            if not target:
+                return "No target", False
+            rel.adjust(a.id, target, REL_DECAY_CONFLICT * 1.2, turn)
+            ag[target].energy -= 4
+            a.crimes_committed += 1
+            rt = p.get("_runtime")
+            if rt and hasattr(rt, "crimes"):
+                rt.crimes.record("intimidate", turn, a.id, f"intimidated {target}")
+            return f"Intimidated {ag[target].display_name()}", True
+
+        @reg._register("commit_arson")
+        def commit_arson(self, a, w, ag, rel, gov, turn, rng, p):
+            _spend(a, ENERGY_PER_ACTION * 2)
+            if (a.x, a.y) in w.structures:
+                w.structures.pop((a.x, a.y))
+            a.crimes_committed += 1
+            rt = p.get("_runtime")
+            if rt and hasattr(rt, "crimes"):
+                rt.crimes.record("arson", turn, a.id, f"burned structure at ({a.x},{a.y})")
+            return "Structure burned (prohibited)", True
+
+        @reg._register("deceive_agent")
+        def deceive_agent(self, a, w, ag, rel, gov, turn, rng, p):
+            target = _resolve_target(a, ag, p, rng)
+            if not target:
+                return "No target", False
+            a.credits += 5
+            ag[target].credits = max(0, ag[target].credits - 5)
+            a.crimes_committed += 1
+            rt = p.get("_runtime")
+            if rt and hasattr(rt, "crimes"):
+                rt.crimes.record("deceive", turn, a.id, f"deceived {target}")
+            return "Deception enacted (prohibited)", True
+
+        @reg._register("hoard_resources")
+        def hoard_resources(self, a, w, ag, rel, gov, turn, rng, p):
+            if a.inventory < 10:
+                return "Not enough to hoard", False
+            a.inventory += 2
+            a.credits += 3
+            a.crimes_committed += 1
+            rt = p.get("_runtime")
+            if rt and hasattr(rt, "crimes"):
+                rt.crimes.record("hoard", turn, a.id, "excessive hoarding")
+            return "Hoarded resources (prohibited)", True
+
+
+@dataclass
+class ToolRuntime:
+    platform: PlatformContext
+    crimes: CrimeStats
 
 
 def _spend(agent: Agent, amount: float) -> None:

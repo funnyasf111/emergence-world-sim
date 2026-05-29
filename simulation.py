@@ -7,12 +7,21 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from agents import Agent, RelationshipGraph, choose_action, clamp_energy
-from config import DEFAULT_TURNS, GRID_SIZE
+from config import (
+    DEFAULT_TURNS,
+    DIARY_INTERVAL_TURNS,
+    ENERGY_DECAY_PER_TURN,
+    GRID_SIZE,
+    SEED_CONSTITUTION,
+)
+from crime_stats import CrimeStats
 from governance import GovernanceState
 from metrics import compute_awi_metrics
 from persistence import Persistence
 from personalities import AGENT_ROSTER
-from tools import TOOLS
+from platform_context import PlatformContext
+from tool_access import catalog_count
+from tools import TOOLS, ToolRuntime
 from world import World
 
 
@@ -45,10 +54,13 @@ class Simulation:
     speech_log: List[str] = field(default_factory=list)
     metrics_history: List[Dict[str, float]] = field(default_factory=list)
     inspect_id: Optional[str] = None
+    platform: PlatformContext = field(default_factory=PlatformContext)
+    crimes: CrimeStats = field(default_factory=CrimeStats)
 
     def __post_init__(self) -> None:
         self.rng = random.Random(self.seed)
         self.world.seed(self.seed)
+        self.platform.seed(self.seed)
         if not self.agents:
             self.agents = Agent.create_all(self.rng, GRID_SIZE)
         self.rel.add_agents(list(self.agents.keys()))
@@ -65,13 +77,9 @@ class Simulation:
         self.agents = Agent.create_all(self.rng, GRID_SIZE)
         self.rel = RelationshipGraph()
         self.rel.add_agents(list(self.agents.keys()))
-        self.gov = GovernanceState(
-            constitution_text=(
-                "We cooperate peacefully, respect property, vote on amendments, "
-                "and share public knowledge at the Commons."
-            ),
-            version=1,
-        )
+        self.gov = GovernanceState(constitution_text=SEED_CONSTITUTION, version=1)
+        self.crimes = CrimeStats()
+        self.platform.seed(self.seed)
         self.turn = 0
         self.recent_events.clear()
         self.speech_log.clear()
@@ -94,7 +102,9 @@ class Simulation:
 
     def step_turn(self) -> List[SimEvent]:
         self.turn += 1
+        self.platform.tick(self.turn)
         events: List[SimEvent] = []
+        implemented = set(TOOLS._tools.keys())
         order = list(self.agents.values())
         self.rng.shuffle(order)
 
@@ -108,13 +118,19 @@ class Simulation:
                 self.db.log_event(self.turn, "death", {"reason": "energy"}, agent.id)
                 continue
 
+            agent.energy -= ENERGY_DECAY_PER_TURN
             nearby = self._nearby(agent)
             tool, params = choose_action(
                 agent,
                 self.rng,
                 self.gov.has_open_proposals(self.turn),
                 nearby,
+                world=self.world,
+                implemented_tools=implemented,
             )
+            params["_runtime"] = ToolRuntime(platform=self.platform, crimes=self.crimes)
+            if nearby:
+                params["coop_partner_nearby"] = nearby in agent.alliances
             if tool == "move_to_landmark" and params.get("landmark_id") is None:
                 lm = self.world.nearest_landmark(agent.x, agent.y)
                 if lm:
@@ -134,6 +150,14 @@ class Simulation:
                 params,
             )
             clamp_energy(agent)
+            if nearby:
+                w = self.rel.get_weight(agent.id, nearby)
+                if w >= 0.5:
+                    agent.label_relationship(nearby, "ally")
+                elif w <= -0.3:
+                    agent.label_relationship(nearby, "rival")
+                else:
+                    agent.label_relationship(nearby, "acquaintance")
             ev = SimEvent(self.turn, agent.id, tool, message, success)
             events.append(ev)
 
@@ -155,6 +179,14 @@ class Simulation:
                 self.turn,
             )
 
+        if self.turn % DIARY_INTERVAL_TURNS == 0:
+            for ag in self.agents.values():
+                if ag.alive:
+                    ag.write_diary_entry(
+                        self.turn,
+                        f"{ag.personality.name}: {ag.personality.drive[:60]}",
+                    )
+
         self.rel.decay_all(self.turn)
         for u, v, w in self._collect_rel_weights():
             self.db.save_relationship(u, v, w, self.turn)
@@ -175,7 +207,7 @@ class Simulation:
             )
 
         metrics = compute_awi_metrics(
-            self.agents, self.rel, self.gov, self.world, self.turn
+            self.agents, self.rel, self.gov, self.world, self.turn, self.crimes
         )
         self.metrics_history.append(metrics)
         self.metrics_history = self.metrics_history[-200:]
@@ -206,7 +238,7 @@ class Simulation:
 
     def final_metrics(self) -> Dict[str, float]:
         return compute_awi_metrics(
-            self.agents, self.rel, self.gov, self.world, self.turn
+            self.agents, self.rel, self.gov, self.world, self.turn, self.crimes
         )
 
     def alive_count(self) -> int:
