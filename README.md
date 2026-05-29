@@ -76,6 +76,21 @@ python main.py --turns 1000 --seed 7 --reset
 
 State is stored in `emergence_world.db` in the project directory.
 
+## Educational variant (`emergence_sim/`)
+
+A lighter, package-based variant (32×32 grid, no SQLite) lives under `emergence_sim/`:
+
+```bash
+python educational_main.py
+python educational_main.py --headless --seed 42 --days 15
+```
+
+| Module | Purpose |
+|--------|---------|
+| `emergence_sim/engine.py` | Simulation loop |
+| `emergence_sim/agents.py` | 10 profiles + trust graph |
+| `emergence_sim/visualize.py` | Pygame + matplotlib fallback |
+
 ## AWI metrics (end of run)
 
 1. Population Vitality  
@@ -88,3 +103,7 @@ State is stored in `emergence_world.db` in the project directory.
 8. Trust Network Density  
 9. Cultural Diversity  
 + Composite AWI score
+
+## Attribution
+
+Citizen names, roles, and drives are based on **Emergence World** by Emergence AI ([CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/)).
