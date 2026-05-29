@@ -10,17 +10,22 @@ from __future__ import annotations
 import argparse
 import sys
 
-from config import DEFAULT_SEASON_TICKS, DEFAULT_TURNS, MAX_TURNS, TICKS_PER_DAY
+from config import DEFAULT_TURNS, MAX_TURNS, TICKS_PER_DAY
+from llm.settings import LLMSettings
+from persistence_factory import create_persistence
 from tool_access import catalog_count
 from simulation import Simulation
 from tools import TOOLS
 from visuals import PYGAME_OK, create_visualizer
 
 
-def print_banner() -> None:
+def print_banner(*, llm: bool, postgres: bool) -> None:
+    store = "PostgreSQL" if postgres else "SQLite"
+    brain = "LLM tool-calling" if llm else "rule-based"
     print("=" * 60)
     print("  EMERGENCE WORLD — Local Simulation")
-    print(f"  10 agents | 80x80 grid | {catalog_count()}+ tools (3-tier) | SQLite")
+    print(f"  10 agents | 80x80 grid | {catalog_count()}+ tools | {store} | {brain}")
+    print("  Weather/news: simulated only (no live APIs)")
     print("=" * 60)
 
 
@@ -52,6 +57,8 @@ def print_final_report(sim: Simulation) -> None:
     print(f"  Exploration:     {sim.world.exploration_ratio():.1%}")
     print(f"  Tools implemented: {TOOLS.count()} | catalog: {catalog_count()}")
     print(f"  Total crimes:      {sim.crimes.total}")
+    if sim.orchestrator:
+        print(f"  LLM stats:         {sim.orchestrator.stats()}")
     print("=" * 60)
 
 
@@ -97,12 +104,32 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--headless", action="store_true", help="No GUI — fast batch run")
     p.add_argument("--reset", action="store_true", help="Reset SQLite database")
     p.add_argument("--no-visual", action="store_true", help="Alias for headless")
+    p.add_argument("--llm", action="store_true", help="Use LLM API for agent decisions")
+    p.add_argument("--model", default=None, help="LLM model (or EMERGENCE_LLM_MODEL)")
+    p.add_argument(
+        "--database-url",
+        default=None,
+        help="PostgreSQL URL (or DATABASE_URL env); default SQLite",
+    )
+    p.add_argument(
+        "--llm-delay",
+        type=float,
+        default=0.0,
+        help="Seconds between LLM calls (rate limit)",
+    )
     return p.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    print_banner()
+    llm_settings = LLMSettings.from_env(enabled=args.llm, model=args.model)
+    llm_settings.request_delay_s = args.llm_delay
+    use_postgres = bool(
+        args.database_url
+        and args.database_url.startswith(("postgres://", "postgresql://"))
+    ) or bool(__import__("os").environ.get("DATABASE_URL", "").startswith("postgres"))
+
+    print_banner(llm=llm_settings.enabled, postgres=use_postgres)
 
     if args.days is not None:
         max_turns = args.days * TICKS_PER_DAY
@@ -115,10 +142,23 @@ def main() -> int:
         print(f"Turns must be 1..{MAX_TURNS}", file=sys.stderr)
         return 1
 
-    sim = Simulation(seed=args.seed, max_turns=max_turns)
+    db = create_persistence(args.database_url)
+    sim = Simulation(
+        seed=args.seed,
+        max_turns=max_turns,
+        db=db,
+        use_llm=llm_settings.enabled,
+        llm_settings=llm_settings,
+        database_url=args.database_url,
+    )
     if args.reset:
         sim.reset(seed=args.seed)
         print("Database reset.")
+    if args.llm and not llm_settings.enabled:
+        print(
+            "Warning: --llm set but no API key. Set OPENAI_API_KEY or EMERGENCE_LLM_API_KEY.",
+            file=sys.stderr,
+        )
 
     headless = args.headless or args.no_visual
     if headless:

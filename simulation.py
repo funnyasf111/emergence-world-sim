@@ -24,6 +24,13 @@ from tool_access import catalog_count
 from tools import TOOLS, ToolRuntime
 from world import World
 
+try:
+    from llm.orchestrator import AgentOrchestrator
+    from llm.settings import LLMSettings
+except ImportError:
+    AgentOrchestrator = None  # type: ignore
+    LLMSettings = None  # type: ignore
+
 
 @dataclass
 class SimEvent:
@@ -56,11 +63,27 @@ class Simulation:
     inspect_id: Optional[str] = None
     platform: PlatformContext = field(default_factory=PlatformContext)
     crimes: CrimeStats = field(default_factory=CrimeStats)
+    use_llm: bool = False
+    llm_settings: Optional["LLMSettings"] = None
+    orchestrator: Optional["AgentOrchestrator"] = None
+    database_url: Optional[str] = None
 
     def __post_init__(self) -> None:
+        if self.database_url:
+            from persistence_factory import create_persistence
+
+            self.db = create_persistence(self.database_url)
         self.rng = random.Random(self.seed)
         self.world.seed(self.seed)
         self.platform.seed(self.seed)
+        if self.use_llm and AgentOrchestrator is not None:
+            settings = self.llm_settings or LLMSettings.from_env(enabled=True)
+            settings.enabled = True
+            try:
+                self.orchestrator = AgentOrchestrator(settings)
+            except ValueError:
+                self.orchestrator = None
+                self.use_llm = False
         if not self.agents:
             self.agents = Agent.create_all(self.rng, GRID_SIZE)
         self.rel.add_agents(list(self.agents.keys()))
@@ -84,11 +107,20 @@ class Simulation:
         self.recent_events.clear()
         self.speech_log.clear()
         self.metrics_history.clear()
-        db_file = self.db.path
-        if db_file.exists():
-            db_file.unlink()
-        self.db = Persistence()
+        if hasattr(self.db, "reset_all"):
+            self.db.reset_all()
+        elif getattr(self.db, "path", None) is not None:
+            db_file = self.db.path
+            if db_file.exists():
+                db_file.unlink()
+            self.db = Persistence()
         self._persist_constitution()
+        if self.use_llm and LLMSettings and AgentOrchestrator:
+            settings = self.llm_settings or LLMSettings.from_env(enabled=True)
+            try:
+                self.orchestrator = AgentOrchestrator(settings)
+            except ValueError:
+                self.orchestrator = None
 
     def _nearby(self, agent: Agent, radius: int = 3) -> Optional[str]:
         best, best_d = None, radius + 1
@@ -120,14 +152,19 @@ class Simulation:
 
             agent.energy -= ENERGY_DECAY_PER_TURN
             nearby = self._nearby(agent)
-            tool, params = choose_action(
-                agent,
-                self.rng,
-                self.gov.has_open_proposals(self.turn),
-                nearby,
-                world=self.world,
-                implemented_tools=implemented,
-            )
+            if self.orchestrator:
+                tool, params = self.orchestrator.decide(
+                    agent, self, nearby, implemented
+                )
+            else:
+                tool, params = choose_action(
+                    agent,
+                    self.rng,
+                    self.gov.has_open_proposals(self.turn),
+                    nearby,
+                    world=self.world,
+                    implemented_tools=implemented,
+                )
             params["_runtime"] = ToolRuntime(platform=self.platform, crimes=self.crimes)
             if nearby:
                 params["coop_partner_nearby"] = nearby in agent.alliances

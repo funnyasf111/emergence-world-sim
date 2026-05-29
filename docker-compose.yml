@@ -1,0 +1,20 @@
+# Optional PostgreSQL for long-horizon scheduler runs.
+# Usage:
+#   docker compose up -d
+#   export DATABASE_URL=postgresql://emergence:emergence@localhost:5432/emergence_world
+#   python scheduler.py --days 15 --reset --database-url "$DATABASE_URL"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: emergence
+      POSTGRES_PASSWORD: emergence
+      POSTGRES_DB: emergence_world
+    ports:
+      - "5432:5432"
+    volumes:
+      - emergence_pg_data:/var/lib/postgresql/data
+
+volumes:
+  emergence_pg_data:

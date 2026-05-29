@@ -50,6 +50,14 @@ python main.py --turns 1000 --seed 7 --reset
 
 See [PLATFORM.md](PLATFORM.md) for alignment with the Emergence AI research platform.
 
+### LLM agents + PostgreSQL + long runs (no live news APIs)
+
+See [LLM_AND_SCHEDULER.md](LLM_AND_SCHEDULER.md) for:
+
+- OpenAI-compatible **LLM tool-calling** (`--llm`)
+- **PostgreSQL** persistence (`DATABASE_URL` / `docker compose`)
+- **scheduler.py** for multi-day checkpointed runs
+
 ### In-sim controls (Pygame)
 
 | Key | Action |
