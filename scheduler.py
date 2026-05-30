@@ -58,6 +58,17 @@ def parse_args() -> argparse.Namespace:
         default=48,
         help="Log status every N turns (default: 1 sim-day)",
     )
+    p.add_argument(
+        "--newspaper-out",
+        default="gazette.txt",
+        help="Save full newspaper chronicle (default: gazette.txt)",
+    )
+    p.add_argument(
+        "--newspaper-html",
+        default="gazette.html",
+        help="Save HTML newspaper (default: gazette.html)",
+    )
+    p.add_argument("--no-newspaper", action="store_true", help="Skip newspaper export")
     return p.parse_args()
 
 
@@ -130,6 +141,16 @@ def main() -> int:
 
     if sim.orchestrator:
         log.info("LLM stats: %s", sim.orchestrator.stats())
+
+    if not args.no_newspaper:
+        sim.newspaper.save(args.newspaper_out)
+        sim.newspaper.save(args.newspaper_html, html=True)
+        log.info(
+            "Gazette saved: %s (%s stories), %s",
+            args.newspaper_out,
+            len(sim.newspaper.stories),
+            args.newspaper_html,
+        )
 
     log.info("Scheduler finished at turn %s", sim.turn)
     return 0

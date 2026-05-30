@@ -162,10 +162,13 @@ if PYGAME_OK:
                 self.screen.blit(label, (hud_x + bw + 6, y - 2))
                 y += 14
 
-            # Speech log
-            y += 8
-            for line in s.speech_log[-6:]:
-                surf = self.font_sm.render(line[:42], True, (160, 200, 180))
+            # Emergence Gazette headlines
+            y += 4
+            gazette = self.font_sm.render("— The Emergence Gazette —", True, (200, 180, 120))
+            self.screen.blit(gazette, (hud_x, y))
+            y += 16
+            for headline in s.newspaper.latest_headlines(6):
+                surf = self.font_sm.render(headline[:42], True, (160, 200, 180))
                 self.screen.blit(surf, (hud_x, y))
                 y += 14
 

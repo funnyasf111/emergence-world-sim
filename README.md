@@ -52,6 +52,27 @@ See [PLATFORM.md](PLATFORM.md) for alignment with the Emergence AI research plat
 
 ### LLM agents + PostgreSQL + long runs (no live news APIs)
 
+### Emergence Gazette (newspaper chronicle)
+
+After every run, a **newspaper-style feed** of simulation events prints to the terminal (sections: Front Page, Civic, Crime, Economy, Society, etc.).
+
+```bash
+# Default: print gazette after run
+python main.py --headless --days 15 --reset
+
+# Save text + HTML editions
+python main.py --headless --days 15 --reset \
+  --newspaper-out gazette.txt --newspaper-html gazette.html
+
+# Skip newspaper output
+python main.py --headless --days 15 --no-newspaper
+
+# Scheduler also writes gazette.txt / gazette.html at end
+python scheduler.py --days 15 --reset
+```
+
+Open `gazette.html` in a browser for a readable newspaper layout. During visual runs, latest headlines appear in the HUD sidebar.
+
 See [LLM_AND_SCHEDULER.md](LLM_AND_SCHEDULER.md) for:
 
 - OpenAI-compatible **LLM tool-calling** (`--llm`)

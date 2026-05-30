@@ -19,6 +19,13 @@ from tools import TOOLS
 from visuals import PYGAME_OK, create_visualizer
 
 
+def print_newspaper(sim: Simulation, *, html_path: str | None = None) -> None:
+    print("\n" + sim.newspaper.render_text())
+    if html_path:
+        out = sim.newspaper.save(html_path, html=True)
+        print(f"\nHTML edition saved: {out.resolve()}")
+
+
 def print_banner(*, llm: bool, postgres: bool) -> None:
     store = "PostgreSQL" if postgres else "SQLite"
     brain = "LLM tool-calling" if llm else "rule-based"
@@ -62,7 +69,7 @@ def print_final_report(sim: Simulation) -> None:
     print("=" * 60)
 
 
-def run_headless(sim: Simulation) -> None:
+def run_headless(sim: Simulation, args: argparse.Namespace) -> None:
     print(f"Running headless for {sim.max_turns} turns...")
     while sim.running and sim.turn < sim.max_turns:
         sim.run_batch(10)
@@ -75,9 +82,14 @@ def run_headless(sim: Simulation) -> None:
                 f"| conflict={m['conflict_intensity']:.3f}"
             )
     print_final_report(sim)
+    if not args.no_newspaper:
+        print_newspaper(sim, html_path=args.newspaper_html)
+        if args.newspaper_out:
+            out = sim.newspaper.save(args.newspaper_out)
+            print(f"Newspaper saved: {out.resolve()}")
 
 
-def run_visual(sim: Simulation) -> None:
+def run_visual(sim: Simulation, args: argparse.Namespace) -> None:
     backend = "pygame" if PYGAME_OK else "matplotlib (fallback)"
     print(f"Starting visual mode ({backend})...")
     print("Controls: Space=pause, +/-=speed, Tab=cycle inspect, Q/Esc=quit")
@@ -89,6 +101,11 @@ def run_visual(sim: Simulation) -> None:
     finally:
         viz.close()
     print_final_report(sim)
+    if not args.no_newspaper:
+        print_newspaper(sim, html_path=args.newspaper_html)
+        if args.newspaper_out:
+            out = sim.newspaper.save(args.newspaper_out)
+            print(f"Newspaper saved: {out.resolve()}")
 
 
 def parse_args() -> argparse.Namespace:
@@ -116,6 +133,22 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.0,
         help="Seconds between LLM calls (rate limit)",
+    )
+    p.add_argument("--no-newspaper", action="store_true", help="Skip newspaper chronicle after run")
+    p.add_argument(
+        "--gazette-all",
+        action="store_true",
+        help="Full event log (default: major incidents only)",
+    )
+    p.add_argument(
+        "--newspaper-out",
+        default=None,
+        help="Save newspaper to file (.txt or .html)",
+    )
+    p.add_argument(
+        "--newspaper-html",
+        default=None,
+        help="Save HTML newspaper edition to this path",
     )
     return p.parse_args()
 
@@ -162,9 +195,9 @@ def main() -> int:
 
     headless = args.headless or args.no_visual
     if headless:
-        run_headless(sim)
+        run_headless(sim, args)
     else:
-        run_visual(sim)
+        run_visual(sim, args)
 
     return 0
 

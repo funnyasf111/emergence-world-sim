@@ -17,6 +17,7 @@ from config import (
 from crime_stats import CrimeStats
 from governance import GovernanceState
 from metrics import compute_awi_metrics
+from newspaper import NewspaperFeed
 from persistence import Persistence
 from personalities import AGENT_ROSTER
 from platform_context import PlatformContext
@@ -67,6 +68,7 @@ class Simulation:
     llm_settings: Optional["LLMSettings"] = None
     orchestrator: Optional["AgentOrchestrator"] = None
     database_url: Optional[str] = None
+    newspaper: NewspaperFeed = field(default_factory=NewspaperFeed)
 
     def __post_init__(self) -> None:
         if self.database_url:
@@ -107,6 +109,7 @@ class Simulation:
         self.recent_events.clear()
         self.speech_log.clear()
         self.metrics_history.clear()
+        self.newspaper.clear()
         if hasattr(self.db, "reset_all"):
             self.db.reset_all()
         elif getattr(self.db, "path", None) is not None:
@@ -234,14 +237,19 @@ class Simulation:
         for gm in gov_msgs:
             self.speech_log.append(f"T{self.turn} [Gov] {gm}")
 
-        # Random constitution proposals
+        proposal_created = False
         if self.turn % 40 == 0:
-            proposer = self.rng.choice([a for a in self.agents.values() if a.alive])
-            self.gov.create_proposal(
-                proposer.id,
-                f"Public goods fund +{self.turn % 5} (sponsored by {proposer.personality.role})",
-                self.turn,
-            )
+            alive = [a for a in self.agents.values() if a.alive]
+            if alive:
+                proposer = self.rng.choice(alive)
+                prop = self.gov.create_proposal(
+                    proposer.id,
+                    f"Public goods fund +{self.turn % 5} (sponsored by {proposer.personality.role})",
+                    self.turn,
+                )
+                proposal_created = prop is not None
+
+        self.newspaper.ingest_turn(self, events, gov_msgs, proposal_created)
 
         metrics = compute_awi_metrics(
             self.agents, self.rel, self.gov, self.world, self.turn, self.crimes
